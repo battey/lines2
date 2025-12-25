@@ -257,22 +257,25 @@ def upsert_game(home: str, visitor: str, date: str, spread: Optional[float],
     cursor = conn.cursor()
     
     try:
-        # Check if game exists - also get existing values to check what's missing
+        # Check if game exists - match by home, visitor, season, week (not date, since date format may differ)
+        # Also get existing values to check what's missing
         cursor.execute("""
-            SELECT id, home_score, visitor_score, spread, home_expected_qb, visitor_expected_qb,
+            SELECT id, date, home_score, visitor_score, spread, home_expected_qb, visitor_expected_qb,
                    home_actual_qb, visitor_actual_qb, log_reg_win_prob, dl_win_prob FROM result 
-            WHERE home = ? AND visitor = ? AND date = ?
-        """, (home, visitor, date))
+            WHERE home = ? AND visitor = ? AND season = ? AND week = ?
+        """, (home, visitor, season, week))
         
         existing = cursor.fetchone()
         
         if existing:
             # Update existing game
-            game_id, existing_home_score, existing_visitor_score, existing_spread, existing_home_expected_qb, existing_visitor_expected_qb, existing_home_actual_qb, existing_visitor_actual_qb, existing_log_reg_win_prob, existing_dl_win_prob = existing
+            game_id, existing_date, existing_home_score, existing_visitor_score, existing_spread, existing_home_expected_qb, existing_visitor_expected_qb, existing_home_actual_qb, existing_visitor_actual_qb, existing_log_reg_win_prob, existing_dl_win_prob = existing
             
             zulu_now = get_zulu_timestamp()
             
             # Determine what needs to be updated
+            # Update date if it's different (e.g., converting from Zulu to Eastern format)
+            update_date = (date != existing_date)
             update_scores = (home_score is not None and visitor_score is not None and 
                            (existing_home_score is None or existing_visitor_score is None))
             update_spread = (spread is not None and existing_spread is None)
@@ -287,6 +290,9 @@ def upsert_game(home: str, visitor: str, date: str, spread: Optional[float],
             updates = []
             params = []
             
+            if update_date:
+                updates.append("date = ?")
+                params.append(date)
             if update_scores:
                 updates.extend(["home_score = ?", "visitor_score = ?"])
                 params.extend([home_score, visitor_score])
@@ -323,6 +329,7 @@ def upsert_game(home: str, visitor: str, date: str, spread: Optional[float],
             # If nothing needs updating, do nothing (don't update updated_at either)
         else:
             # Insert new game (set both created_at and updated_at to current Zulu time)
+            # Date should already be in Eastern format from normalize_date_to_eastern()
             zulu_now = get_zulu_timestamp()
             cursor.execute("""
                 INSERT INTO result (home, visitor, date, spread, home_score, visitor_score, home_expected_qb, visitor_expected_qb, home_actual_qb, visitor_actual_qb, log_reg_win_prob, dl_win_prob, season, week, created_at, updated_at)

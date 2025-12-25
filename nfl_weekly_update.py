@@ -10,6 +10,7 @@ import os
 import sys
 import time
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 import requests
 from typing import Dict, List, Optional
@@ -36,26 +37,44 @@ ODDS_API_KEY = os.getenv("ODDS_API_KEY", "")
 ESPN_BASE_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl"
 
 
-def normalize_date_to_zulu(date_str: str) -> str:
+def normalize_date_to_eastern(date_str: str) -> str:
     """
-    Normalize a date string to Zulu (UTC) format with 'Z' suffix.
+    Normalize a date string to US Eastern Time (EDT/EST, automatically selected based on date).
     Handles various ISO 8601 formats from ESPN API.
+    Returns ISO 8601 format with Eastern timezone offset (e.g., "2024-01-15T13:00:00-05:00" for EST
+    or "2024-07-15T13:00:00-04:00" for EDT).
     """
-    if not date_str or date_str.endswith('Z'):
+    if not date_str:
+        return date_str
+    
+    # If already in Eastern format (has offset like -05:00 or -04:00), return as-is
+    if ('-05:00' in date_str or '-04:00' in date_str) and not date_str.endswith('Z'):
         return date_str
     
     try:
-        # Try parsing with timezone info first
-        if '+' in date_str or date_str.count('-') > 2:
+        # US Eastern timezone (automatically handles EDT/EST)
+        eastern_tz = ZoneInfo("America/New_York")
+        
+        # Parse the date string - handle various formats
+        if date_str.endswith('Z'):
+            # UTC date with Z suffix
             dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+        elif '+' in date_str or (date_str.count('-') > 2 and 'T' in date_str and ('+' in date_str or (len(date_str) > 6 and date_str[-6] in ['+', '-']))):
+            # Has timezone offset already (e.g., +00:00 or -05:00)
+            dt = datetime.fromisoformat(date_str)
         else:
-            # No timezone info, assume UTC
+            # No timezone info - assume UTC
             dt = datetime.fromisoformat(date_str)
             dt = dt.replace(tzinfo=timezone.utc)
         
-        return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    except (ValueError, AttributeError):
+        # Convert to Eastern time (automatically handles EDT/EST based on date)
+        dt_eastern = dt.astimezone(eastern_tz)
+        
+        # Return in ISO 8601 format with timezone offset
+        return dt_eastern.isoformat()
+    except Exception as e:
         # If parsing fails, return as-is (might already be correct)
+        print(f"Warning: Could not parse date '{date_str}': {e}")
         return date_str
 
 
@@ -167,8 +186,8 @@ def fetch_espn_scores(season: int, week: int) -> Optional[List[Dict]]:
         for event in data.get("events", []):
             competition = event.get("competitions", [{}])[0]
             
-            # Normalize date to Zulu format
-            date_str = normalize_date_to_zulu(event.get("date", ""))
+            # Normalize date to US Eastern Time
+            date_str = normalize_date_to_eastern(event.get("date", ""))
             
             game_data = {
                 "date": date_str,
@@ -221,8 +240,8 @@ def fetch_espn_schedule(season: int, week: int) -> Optional[List[Dict]]:
         for event in data.get("events", []):
             competition = event.get("competitions", [{}])[0]
             
-            # Normalize date to Zulu format
-            date_str = normalize_date_to_zulu(event.get("date", ""))
+            # Normalize date to US Eastern Time
+            date_str = normalize_date_to_eastern(event.get("date", ""))
             
             game_data = {
                 "date": date_str,
@@ -920,7 +939,7 @@ def find_matching_spread(home_team: str, away_team: str, spreads: Dict) -> Optio
     return None
 
 
-def save_scores_to_db(scores: List[Dict], week: int, season: int, prompt_for_quarterbacks: bool = False):
+def save_scores_to_db(scores: List[Dict], week: int, season: int, prompt_for_quarterbacks: bool = False, accept_default_qbs: bool = False):
     """
     Update database with previous week's scores.
     Only updates existing games - does not insert new rows.
@@ -961,28 +980,36 @@ def save_scores_to_db(scores: List[Dict], week: int, season: int, prompt_for_qua
                     home_box_qb = fetch_actual_quarterback(game_id, home, True) if game_id else None
                     home_default_qb = home_expected_qb or home_box_qb
                     
-                    home_prompt = f"{home} Actual QB"
-                    if home_default_qb:
-                        home_prompt += f" [{home_default_qb}]"
-                    home_prompt += ": "
-                    
-                    home_input = input(home_prompt).strip()
-                    home_actual_qb_raw = home_input if home_input else home_default_qb
-                    home_actual_qb = normalize_qb_name(home_actual_qb_raw)
+                    if accept_default_qbs:
+                        # Automatically accept the default
+                        home_actual_qb = normalize_qb_name(home_default_qb)
+                    else:
+                        home_prompt = f"{home} Actual QB"
+                        if home_default_qb:
+                            home_prompt += f" [{home_default_qb}]"
+                        home_prompt += ": "
+                        
+                        home_input = input(home_prompt).strip()
+                        home_actual_qb_raw = home_input if home_input else home_default_qb
+                        home_actual_qb = normalize_qb_name(home_actual_qb_raw)
                     
                     # For visitor team
                     visitor_expected_qb = get_expected_qb_from_game(home, away, date, away)
                     visitor_box_qb = fetch_actual_quarterback(game_id, away, False) if game_id else None
                     visitor_default_qb = visitor_expected_qb or visitor_box_qb
                     
-                    visitor_prompt = f"{away} Actual QB"
-                    if visitor_default_qb:
-                        visitor_prompt += f" [{visitor_default_qb}]"
-                    visitor_prompt += ": "
-                    
-                    visitor_input = input(visitor_prompt).strip()
-                    visitor_actual_qb_raw = visitor_input if visitor_input else visitor_default_qb
-                    visitor_actual_qb = normalize_qb_name(visitor_actual_qb_raw)
+                    if accept_default_qbs:
+                        # Automatically accept the default
+                        visitor_actual_qb = normalize_qb_name(visitor_default_qb)
+                    else:
+                        visitor_prompt = f"{away} Actual QB"
+                        if visitor_default_qb:
+                            visitor_prompt += f" [{visitor_default_qb}]"
+                        visitor_prompt += ": "
+                        
+                        visitor_input = input(visitor_prompt).strip()
+                        visitor_actual_qb_raw = visitor_input if visitor_input else visitor_default_qb
+                        visitor_actual_qb = normalize_qb_name(visitor_actual_qb_raw)
                 
                 # Update game with scores and actual QBs using upsert_game
                 if upsert_game(home, away, date, None, home_score, visitor_score, season, week,
@@ -1011,7 +1038,7 @@ def save_scores_to_db(scores: List[Dict], week: int, season: int, prompt_for_qua
         dump_sqlite_to_file(DB_PATH, DB_DUMP_PATH)
 
 
-def save_schedule_to_db(schedule: List[Dict], week: int, season: int, spreads: Optional[Dict] = None, prompt_for_quarterbacks: bool = False):
+def save_schedule_to_db(schedule: List[Dict], week: int, season: int, spreads: Optional[Dict] = None, prompt_for_quarterbacks: bool = False, accept_default_qbs: bool = False):
     """Insert upcoming week's games into database (without scores)."""
     inserted_count = 0
     updated_count = 0
@@ -1047,28 +1074,36 @@ def save_schedule_to_db(schedule: List[Dict], week: int, season: int, spreads: O
             home_last_actual_qb = get_most_recent_actual_qb(home, season, week) if not home_web_qb else None
             home_default_qb = home_web_qb or home_last_actual_qb
             
-            home_prompt = f"{home} QB"
-            if home_default_qb:
-                home_prompt += f" [{home_default_qb}]"
-            home_prompt += ": "
-            
-            home_input = input(home_prompt).strip()
-            home_expected_qb_raw = home_input if home_input else home_default_qb
-            home_expected_qb = normalize_qb_name(home_expected_qb_raw)
+            if accept_default_qbs:
+                # Automatically accept the default
+                home_expected_qb = normalize_qb_name(home_default_qb)
+            else:
+                home_prompt = f"{home} QB"
+                if home_default_qb:
+                    home_prompt += f" [{home_default_qb}]"
+                home_prompt += ": "
+                
+                home_input = input(home_prompt).strip()
+                home_expected_qb_raw = home_input if home_input else home_default_qb
+                home_expected_qb = normalize_qb_name(home_expected_qb_raw)
             
             # For away team: Priority 1) web fetch, Priority 2) last week's actual QB
             away_web_qb = fetch_expected_quarterback(away)
             away_last_actual_qb = get_most_recent_actual_qb(away, season, week) if not away_web_qb else None
             away_default_qb = away_web_qb or away_last_actual_qb
             
-            away_prompt = f"{away} QB"
-            if away_default_qb:
-                away_prompt += f" [{away_default_qb}]"
-            away_prompt += ": "
-            
-            away_input = input(away_prompt).strip()
-            visitor_expected_qb_raw = away_input if away_input else away_default_qb
-            visitor_expected_qb = normalize_qb_name(visitor_expected_qb_raw)
+            if accept_default_qbs:
+                # Automatically accept the default
+                visitor_expected_qb = normalize_qb_name(away_default_qb)
+            else:
+                away_prompt = f"{away} QB"
+                if away_default_qb:
+                    away_prompt += f" [{away_default_qb}]"
+                away_prompt += ": "
+                
+                away_input = input(away_prompt).strip()
+                visitor_expected_qb_raw = away_input if away_input else away_default_qb
+                visitor_expected_qb = normalize_qb_name(visitor_expected_qb_raw)
         
         # Check if game exists before upserting
         existed = game_exists(home, away, date)
@@ -1113,6 +1148,11 @@ def main():
         action="store_true",
         help="Only update previous week's results (useful after week 18)"
     )
+    parser.add_argument(
+        "--accept-default-qbs",
+        action="store_true",
+        help="Automatically accept default quarterbacks without prompting (only works with --schedule-only)"
+    )
     
     args = parser.parse_args()
     
@@ -1146,7 +1186,7 @@ def main():
         scores = fetch_espn_scores(season, previous_week)
         
         if scores:
-            save_scores_to_db(scores, previous_week, season, prompt_for_quarterbacks=False)
+            save_scores_to_db(scores, previous_week, season, prompt_for_quarterbacks=False, accept_default_qbs=args.accept_default_qbs)
         else:
             print("Warning: Could not fetch scores. Database not updated.")
         
@@ -1176,7 +1216,7 @@ def main():
                     print("Note: Could not fetch spreads from APIs. Games saved without spreads.")
                     print("      Consider setting ODDS_API_KEY environment variable for spreads.")
             
-            save_schedule_to_db(schedule, upcoming_week, season, spreads, prompt_for_quarterbacks=args.schedule_only)
+            save_schedule_to_db(schedule, upcoming_week, season, spreads, prompt_for_quarterbacks=args.schedule_only, accept_default_qbs=args.accept_default_qbs)
         else:
             print("Warning: Could not fetch schedule. Database not updated.")
     

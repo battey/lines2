@@ -294,8 +294,9 @@ def dump_database(format_type: str):
                 if value is None:
                     values.append("")
                 else:
-                    # Normalize timestamp columns to Zulu format
-                    if col in ("date", "created_at", "updated_at"):
+                    # Normalize timestamp columns to Zulu format (only for created_at/updated_at)
+                    # The 'date' column should remain in Eastern format as stored
+                    if col in ("created_at", "updated_at"):
                         values.append(normalize_to_zulu(str(value)))
                     else:
                         values.append(str(value))
