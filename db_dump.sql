@@ -19,22 +19,22 @@ CREATE TABLE result (
             updated_at TIMESTAMP NOT NULL,
             UNIQUE(home, visitor, date)
         );
-INSERT INTO "result" VALUES(1,'Washington Commanders','Dallas Cowboys','2025-12-25T18:00Z',8.5,NULL,NULL,'josh johnson','dak prescott',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T14:51:01Z','2025-12-25T14:51:01Z');
-INSERT INTO "result" VALUES(2,'Minnesota Vikings','Detroit Lions','2025-12-25T21:30Z',7.5,NULL,NULL,'max brosmer','jared goff',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T14:51:11Z','2025-12-25T14:51:11Z');
-INSERT INTO "result" VALUES(3,'Kansas City Chiefs','Denver Broncos','2025-12-26T01:15Z',13.5,NULL,NULL,'chris oladokun','bo nix',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T14:51:40Z','2025-12-25T14:51:40Z');
-INSERT INTO "result" VALUES(4,'Los Angeles Chargers','Houston Texans','2025-12-27T21:30Z',-1.5,NULL,NULL,'justin herbert','c j stroud',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T14:51:51Z','2025-12-25T14:51:51Z');
-INSERT INTO "result" VALUES(5,'Green Bay Packers','Baltimore Ravens','2025-12-28T01:00Z',-3.5,NULL,NULL,'jordan love','lamar jackson',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T14:51:58Z','2025-12-25T14:51:58Z');
-INSERT INTO "result" VALUES(6,'Cincinnati Bengals','Arizona Cardinals','2025-12-28T18:00Z',-7.5,NULL,NULL,'joe burrow','jacoby brissett',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T14:52:15Z','2025-12-25T14:52:15Z');
-INSERT INTO "result" VALUES(7,'Cleveland Browns','Pittsburgh Steelers','2025-12-28T18:00Z',3.0,NULL,NULL,'shedeur sanders','aaron rodgers',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T14:52:31Z','2025-12-25T14:52:31Z');
-INSERT INTO "result" VALUES(8,'Tennessee Titans','New Orleans Saints','2025-12-28T18:00Z',2.5,NULL,NULL,'cam ward','tyler shough',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T14:52:42Z','2025-12-25T14:52:42Z');
-INSERT INTO "result" VALUES(9,'Indianapolis Colts','Jacksonville Jaguars','2025-12-28T18:00Z',6.5,NULL,NULL,'philip rivers','trevor lawrence',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T14:52:56Z','2025-12-25T14:52:56Z');
-INSERT INTO "result" VALUES(10,'Miami Dolphins','Tampa Bay Buccaneers','2025-12-28T18:00Z',5.5,NULL,NULL,'quinn ewers','baker mayfield',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T14:53:09Z','2025-12-25T14:53:09Z');
-INSERT INTO "result" VALUES(11,'New York Jets','New England Patriots','2025-12-28T18:00Z',13.5,NULL,NULL,'brady cook','drake maye',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T14:53:19Z','2025-12-25T14:53:19Z');
-INSERT INTO "result" VALUES(12,'Carolina Panthers','Seattle Seahawks','2025-12-28T18:00Z',7.0,NULL,NULL,'bryce young','sam darnold',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T14:53:42Z','2025-12-25T14:53:42Z');
-INSERT INTO "result" VALUES(13,'Las Vegas Raiders','New York Giants','2025-12-28T21:05Z',1.5,NULL,NULL,'geno smith','jaxson dart',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T14:53:51Z','2025-12-25T14:53:51Z');
-INSERT INTO "result" VALUES(14,'Buffalo Bills','Philadelphia Eagles','2025-12-28T21:25Z',-1.5,NULL,NULL,'josh allen','jalen hurts',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T14:54:06Z','2025-12-25T14:54:06Z');
-INSERT INTO "result" VALUES(15,'San Francisco 49ers','Chicago Bears','2025-12-29T01:20Z',-3.0,NULL,NULL,'brock purdy','caleb williams',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T14:54:17Z','2025-12-25T14:54:17Z');
-INSERT INTO "result" VALUES(16,'Atlanta Falcons','Los Angeles Rams','2025-12-30T01:15Z',7.5,NULL,NULL,'kirk cousins','matthew stafford',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T14:54:59Z','2025-12-25T14:54:59Z');
+INSERT INTO "result" VALUES(1,'Washington Commanders','Dallas Cowboys','2025-12-25T18:00Z',8.5,NULL,NULL,'Josh Johnson','Dak Prescott',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T15:25:08Z','2025-12-25T15:25:08Z');
+INSERT INTO "result" VALUES(2,'Minnesota Vikings','Detroit Lions','2025-12-25T21:30Z',7.5,NULL,NULL,'Max Brosmer','Jared Goff',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T15:25:18Z','2025-12-25T15:25:18Z');
+INSERT INTO "result" VALUES(3,'Kansas City Chiefs','Denver Broncos','2025-12-26T01:15Z',13.5,NULL,NULL,'Chris Oladokun','Bo Nix',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T15:25:22Z','2025-12-25T15:25:22Z');
+INSERT INTO "result" VALUES(4,'Los Angeles Chargers','Houston Texans','2025-12-27T21:30Z',-1.5,NULL,NULL,'Justin Herbert','C J Stroud',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T15:25:27Z','2025-12-25T15:25:27Z');
+INSERT INTO "result" VALUES(5,'Green Bay Packers','Baltimore Ravens','2025-12-28T01:00Z',-3.5,NULL,NULL,'Jordan Love','Lamar Jackson',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T15:25:33Z','2025-12-25T15:25:33Z');
+INSERT INTO "result" VALUES(6,'Cincinnati Bengals','Arizona Cardinals','2025-12-28T18:00Z',-7.5,NULL,NULL,'Joe Burrow','Jacoby Brissett',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T15:25:38Z','2025-12-25T15:25:38Z');
+INSERT INTO "result" VALUES(7,'Cleveland Browns','Pittsburgh Steelers','2025-12-28T18:00Z',3.0,NULL,NULL,'Shedeur Sanders','Aaron Rodgers',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T15:25:41Z','2025-12-25T15:25:41Z');
+INSERT INTO "result" VALUES(8,'Tennessee Titans','New Orleans Saints','2025-12-28T18:00Z',2.5,NULL,NULL,'Cam Ward','Tyler Shough',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T15:25:46Z','2025-12-25T15:25:46Z');
+INSERT INTO "result" VALUES(9,'Indianapolis Colts','Jacksonville Jaguars','2025-12-28T18:00Z',6.5,NULL,NULL,'Philip Rivers','Trevor Lawrence',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T15:25:50Z','2025-12-25T15:25:50Z');
+INSERT INTO "result" VALUES(10,'Miami Dolphins','Tampa Bay Buccaneers','2025-12-28T18:00Z',5.5,NULL,NULL,'Quinn Ewers','Baker Mayfield',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T15:25:55Z','2025-12-25T15:25:55Z');
+INSERT INTO "result" VALUES(11,'New York Jets','New England Patriots','2025-12-28T18:00Z',13.5,NULL,NULL,'Brady Cook','Drake Maye',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T15:25:59Z','2025-12-25T15:25:59Z');
+INSERT INTO "result" VALUES(12,'Carolina Panthers','Seattle Seahawks','2025-12-28T18:00Z',7.0,NULL,NULL,'Bryce Young','Sam Darnold',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T15:26:03Z','2025-12-25T15:26:03Z');
+INSERT INTO "result" VALUES(13,'Las Vegas Raiders','New York Giants','2025-12-28T21:05Z',1.5,NULL,NULL,'Geno Smith','Jaxson Dart',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T15:26:06Z','2025-12-25T15:26:06Z');
+INSERT INTO "result" VALUES(14,'Buffalo Bills','Philadelphia Eagles','2025-12-28T21:25Z',-1.5,NULL,NULL,'Josh Allen','Jalen Hurts',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T15:26:11Z','2025-12-25T15:26:11Z');
+INSERT INTO "result" VALUES(15,'San Francisco 49ers','Chicago Bears','2025-12-29T01:20Z',-3.0,NULL,NULL,'Brock Purdy','Caleb Williams',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T15:26:15Z','2025-12-25T15:26:15Z');
+INSERT INTO "result" VALUES(16,'Atlanta Falcons','Los Angeles Rams','2025-12-30T01:15Z',7.5,NULL,NULL,'Kirk Cousins','Matthew Stafford',NULL,NULL,NULL,NULL,2025,17,'2025-12-25T15:26:19Z','2025-12-25T15:26:19Z');
 CREATE INDEX idx_date ON result(date)
     ;
 CREATE INDEX idx_season_week ON result(season, week)

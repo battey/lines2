@@ -133,6 +133,103 @@ def get_most_recent_expected_qb(team_name: str, season: int, before_week: int) -
         conn.close()
 
 
+def get_most_recent_actual_qb(team_name: str, season: int, before_week: int) -> Optional[str]:
+    """
+    Get the most recent actual quarterback for a team from previous games in the current season.
+    
+    Args:
+        team_name: Name of the team
+        season: NFL season year
+        before_week: Only consider games from weeks before this
+    
+    Returns:
+        Quarterback name, or None if not found
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Find the most recent completed game where this team played and has an actual quarterback
+        cursor.execute("""
+            SELECT home_actual_qb, visitor_actual_qb, home, visitor
+            FROM result 
+            WHERE season = ? 
+              AND week < ?
+              AND home_score IS NOT NULL
+              AND visitor_score IS NOT NULL
+              AND (home_actual_qb IS NOT NULL OR visitor_actual_qb IS NOT NULL)
+              AND (UPPER(home) = UPPER(?) OR UPPER(visitor) = UPPER(?))
+            ORDER BY week DESC, date DESC
+            LIMIT 1
+        """, (season, before_week, team_name, team_name))
+        
+        result = cursor.fetchone()
+        if not result:
+            return None
+        
+        home_actual_qb = result[0]
+        visitor_actual_qb = result[1]
+        home_team = result[2]
+        visitor_team = result[3]
+        
+        # Determine if the team we're looking for was home or away
+        if home_team.upper() == team_name.upper():
+            return home_actual_qb
+        else:
+            return visitor_actual_qb
+    except sqlite3.Error as e:
+        print(f"Error getting most recent actual quarterback: {e}")
+        return None
+    finally:
+        conn.close()
+
+
+def get_expected_qb_from_game(home: str, visitor: str, date: str, team_name: str) -> Optional[str]:
+    """
+    Get the expected quarterback for a specific team from a specific game record.
+    
+    Args:
+        home: Home team name
+        visitor: Visitor team name
+        date: Game date
+        team_name: Name of the team to get QB for
+    
+    Returns:
+        Expected quarterback name for the specified team, or None if not found
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            SELECT home_expected_qb, visitor_expected_qb, home, visitor
+            FROM result 
+            WHERE home = ? AND visitor = ? AND date = ?
+        """, (home, visitor, date))
+        
+        result = cursor.fetchone()
+        if not result:
+            return None
+        
+        home_expected_qb = result[0]
+        visitor_expected_qb = result[1]
+        home_team = result[2]
+        visitor_team = result[3]
+        
+        # Determine if the team we're looking for was home or away
+        if home_team.upper() == team_name.upper():
+            return home_expected_qb
+        elif visitor_team.upper() == team_name.upper():
+            return visitor_expected_qb
+        else:
+            return None
+    except sqlite3.Error as e:
+        print(f"Error getting expected quarterback from game: {e}")
+        return None
+    finally:
+        conn.close()
+
+
 def upsert_game(home: str, visitor: str, date: str, spread: Optional[float],
                 home_score: Optional[int], visitor_score: Optional[int],
                 season: int, week: int, home_expected_qb: Optional[str] = None,

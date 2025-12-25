@@ -8,6 +8,7 @@ Run every Tuesday during NFL season.
 import argparse
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 import requests
@@ -19,7 +20,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import database functions
-from db import upsert_game, game_exists, update_game_scores, get_most_recent_expected_qb
+from db import (upsert_game, game_exists, update_game_scores, get_most_recent_expected_qb,
+                get_most_recent_actual_qb, get_expected_qb_from_game)
 from db_utils import dump_sqlite_to_file
 
 # Configuration
@@ -175,7 +177,8 @@ def fetch_espn_scores(season: int, week: int) -> Optional[List[Dict]]:
                 "home_score": None,
                 "away_score": None,
                 "status": event.get("status", {}).get("type", {}).get("description", ""),
-                "completed": event.get("status", {}).get("type", {}).get("completed", False)
+                "completed": event.get("status", {}).get("type", {}).get("completed", False),
+                "game_id": event.get("id")  # ESPN event ID for fetching QB data
             }
             
             # Extract team names and scores
@@ -227,7 +230,8 @@ def fetch_espn_schedule(season: int, week: int) -> Optional[List[Dict]]:
                 "away_team": "",
                 "spread": None,
                 "over_under": None,
-                "spread_source": None
+                "spread_source": None,
+                "game_id": event.get("id")  # ESPN event ID for fetching QB data
             }
             
             # Extract team names
@@ -532,6 +536,363 @@ def fetch_odds_api_spreads(season: int, week: int) -> Optional[Dict]:
         return None
 
 
+def normalize_qb_name(qb_name: Optional[str]) -> Optional[str]:
+    """
+    Normalize quarterback name:
+    - Replace non-alphabetic characters with spaces
+    - Convert to title case (initial cap)
+    - Trim leading and trailing whitespace
+    
+    Args:
+        qb_name: Quarterback name to normalize, or None
+    
+    Returns:
+        Normalized name, or None if input was None
+    """
+    if not qb_name:
+        return None
+    
+    # Replace non-alphabetic characters (except spaces) with spaces
+    normalized = re.sub(r'[^a-zA-Z\s]', ' ', qb_name)
+    
+    # Convert to title case (first letter of each word capitalized)
+    normalized = normalized.title()
+    
+    # Replace multiple spaces with single space and trim
+    normalized = re.sub(r'\s+', ' ', normalized).strip()
+    
+    return normalized if normalized else None
+
+
+# Team name to ESPN URL slug mapping (for scraping depth charts)
+TEAM_TO_ESPN_SLUG = {
+    "Arizona Cardinals": "ari",
+    "Atlanta Falcons": "atl",
+    "Baltimore Ravens": "bal",
+    "Buffalo Bills": "buf",
+    "Carolina Panthers": "car",
+    "Chicago Bears": "chi",
+    "Cincinnati Bengals": "cin",
+    "Cleveland Browns": "cle",
+    "Dallas Cowboys": "dal",
+    "Denver Broncos": "den",
+    "Detroit Lions": "det",
+    "Green Bay Packers": "gb",
+    "Houston Texans": "hou",
+    "Indianapolis Colts": "ind",
+    "Jacksonville Jaguars": "jax",
+    "Kansas City Chiefs": "kc",
+    "Las Vegas Raiders": "lv",
+    "Los Angeles Chargers": "lac",
+    "Los Angeles Rams": "lar",
+    "Miami Dolphins": "mia",
+    "Minnesota Vikings": "min",
+    "New England Patriots": "ne",
+    "New Orleans Saints": "no",
+    "New York Giants": "nyg",
+    "New York Jets": "nyj",
+    "Philadelphia Eagles": "phi",
+    "Pittsburgh Steelers": "pit",
+    "San Francisco 49ers": "sf",
+    "Seattle Seahawks": "sea",
+    "Tampa Bay Buccaneers": "tb",
+    "Tennessee Titans": "ten",
+    "Washington Commanders": "wsh",
+}
+
+
+def fetch_expected_quarterback(team_name: str, game_id: Optional[str] = None) -> Optional[str]:
+    """
+    Fetch expected starting quarterback for a team from the web.
+    Tries ESPN API first, then falls back to scraping ESPN depth chart page.
+    
+    Args:
+        team_name: Name of the team
+        game_id: Optional ESPN game/event ID (not currently used but reserved for API endpoint)
+    
+    Returns:
+        Quarterback name, or None if not found
+    """
+    try:
+        # Try scraping ESPN depth chart
+        # Use exact matching only to avoid confusion between similar team names
+        slug = None
+        team_name_upper = team_name.upper().strip()
+        
+        # Try exact match first (case-insensitive)
+        for team_key, team_slug in TEAM_TO_ESPN_SLUG.items():
+            if team_key.upper().strip() == team_name_upper:
+                slug = team_slug
+                break
+        
+        # If no exact match, try partial matching but be very careful
+        # Only match if the team name contains key unique words from the dictionary key
+        if not slug:
+            best_match = None
+            best_score = 0
+            
+            for team_key, team_slug in TEAM_TO_ESPN_SLUG.items():
+                key_upper = team_key.upper().strip()
+                
+                # Extract key identifying words (last word is usually unique: Giants, Jets, etc.)
+                input_words = set(w for w in team_name_upper.split() if len(w) > 2)
+                key_words = set(w for w in key_upper.split() if len(w) > 2)
+                
+                # For NY teams, require both "NEW YORK" AND the specific team name
+                if "NEW YORK" in team_name_upper:
+                    if "NEW YORK" not in key_upper:
+                        continue  # Skip non-NY teams
+                    # Must match the specific team identifier
+                    if "JETS" in team_name_upper and "JETS" not in key_upper:
+                        continue
+                    if "GIANTS" in team_name_upper and "GIANTS" not in key_upper:
+                        continue
+                    if "JETS" in key_upper and "JETS" not in team_name_upper:
+                        continue
+                    if "GIANTS" in key_upper and "GIANTS" not in team_name_upper:
+                        continue
+                
+                # Calculate match score - require last word to match (team type)
+                input_last = team_name_upper.split()[-1] if team_name_upper else ""
+                key_last = key_upper.split()[-1] if key_upper else ""
+                
+                if input_last == key_last:
+                    # Last words match - this is likely the right team
+                    # Calculate how many words match
+                    common_words = input_words & key_words
+                    # Remove generic words from scoring
+                    generic = {"NEW", "YORK", "LOS", "ANGELES", "SAN", "FRANCISCO", "SAINT", "SAINTS", "VEGAS", "LAS"}
+                    meaningful_common = common_words - generic
+                    score = len(meaningful_common) + (2 if input_last == key_last else 0)
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_match = team_slug
+            
+            if best_match and best_score >= 1:  # Require at least one meaningful word match
+                slug = best_match
+        
+        if not slug:
+            return None
+        
+        from bs4 import BeautifulSoup
+        
+        # Small delay to avoid rate limiting
+        time.sleep(1)
+        
+        url = f"https://www.espn.com/nfl/team/depth/_/name/{slug}"
+        response = requests.get(url, timeout=10, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        })
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # ESPN depth chart structure: Look for table rows with position data
+        # Try multiple strategies to find the QB
+        qb_text = None
+        
+        # Strategy 1: Look for table with depth chart data
+        # ESPN uses tables with position in first column, players in subsequent columns
+        tables = soup.find_all('table')
+        for table in tables:
+            rows = table.find_all('tr')
+            for row in rows:
+                cells = row.find_all(['td', 'th'])
+                if len(cells) >= 2:
+                    # Check if first cell contains "QB"
+                    first_cell_text = cells[0].get_text(strip=True).upper()
+                    if 'QB' in first_cell_text or 'QUARTERBACK' in first_cell_text:
+                        # Get the first player (starter) from second cell
+                        player_cell = cells[1]
+                        # Look for player link or text
+                        player_link = player_cell.find('a', href=re.compile(r'/player/', re.I))
+                        if player_link:
+                            qb_text = player_link.get_text(strip=True)
+                            break
+                        else:
+                            # Try direct text
+                            text = player_cell.get_text(strip=True)
+                            if text and len(text) > 2:
+                                qb_text = text
+                                break
+                if qb_text:
+                    break
+            if qb_text:
+                break
+        
+        # Strategy 2: Look for div-based depth chart (newer ESPN layout)
+        if not qb_text:
+            # Look for sections/divs with position labels
+            for element in soup.find_all(['div', 'section'], class_=re.compile(r'position|depth', re.I)):
+                # Find QB label
+                qb_label = element.find(string=re.compile(r'^QB\s*$', re.I))
+                if not qb_label:
+                    # Try case-insensitive
+                    for text_node in element.find_all(string=True):
+                        if re.match(r'^QB\s*$', text_node.strip(), re.I):
+                            qb_label = text_node
+                            break
+                
+                if qb_label:
+                    # Find parent container and look for player name
+                    container = qb_label.find_parent(['div', 'section', 'li'])
+                    if container:
+                        # Look for player links or names
+                        player_links = container.find_all('a', href=re.compile(r'/player/', re.I))
+                        if player_links:
+                            qb_text = player_links[0].get_text(strip=True)
+                            break
+                        # Or look for span/div with player name classes
+                        name_elements = container.find_all(['span', 'div'], class_=re.compile(r'name|player', re.I))
+                        for name_elem in name_elements:
+                            text = name_elem.get_text(strip=True)
+                            if text and len(text) > 2 and not text.upper() in ['QB', 'QUARTERBACK']:
+                                qb_text = text
+                                break
+                    if qb_text:
+                        break
+        
+        # Strategy 3: Look for any link with /player/ that's near a QB label
+        if not qb_text:
+            # Find all QB labels/text
+            qb_elements = soup.find_all(string=re.compile(r'\bQB\b', re.I))
+            for qb_elem in qb_elements:
+                # Look in nearby context (parent and siblings)
+                parent = qb_elem.find_parent()
+                if parent:
+                    # Check same row/container
+                    player_link = parent.find('a', href=re.compile(r'/player/', re.I))
+                    if player_link:
+                        qb_text = player_link.get_text(strip=True)
+                        break
+                    # Check siblings
+                    if parent.parent:
+                        for sibling in parent.parent.find_all('a', href=re.compile(r'/player/', re.I)):
+                            qb_text = sibling.get_text(strip=True)
+                            if qb_text:
+                                break
+                    if qb_text:
+                        break
+        
+        if qb_text:
+            return qb_text.strip()
+        
+        return None
+    except requests.RequestException as e:
+        # Network error - silently fail
+        return None
+    except Exception as e:
+        # Other errors - silently fail
+        return None
+
+
+def fetch_actual_quarterback(game_id: str, team_name: str, is_home: bool) -> Optional[str]:
+    """
+    Fetch actual quarterback who played majority of snaps from box score.
+    Tries ESPN API first, then falls back to scraping ESPN box score page.
+    
+    Args:
+        game_id: ESPN game/event ID
+        team_name: Name of the team
+        is_home: True if home team, False if away team
+    
+    Returns:
+        Quarterback name (who played majority of snaps), or None if not found
+    """
+    try:
+        # Try ESPN API box score endpoint
+        url = f"{ESPN_BASE_URL}/summary"
+        params = {"event": game_id}
+        response = requests.get(url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            # Look for passing statistics
+            boxscore = data.get("boxscore", {})
+            teams = boxscore.get("teams", [])
+            
+            team_index = 0 if is_home else 1
+            if team_index < len(teams):
+                team = teams[team_index]
+                statistics = team.get("statistics", [])
+                
+                for stat_group in statistics:
+                    if stat_group.get("name") == "passing":
+                        athletes = stat_group.get("athletes", [])
+                        if athletes:
+                            # Find QB with most attempts or yards
+                            best_qb = None
+                            best_attempts = -1
+                            
+                            for athlete in athletes:
+                                stats = athlete.get("stats", [])
+                                attempts = None
+                                for stat in stats:
+                                    if stat.get("name") == "passingAttempts":
+                                        attempts = stat.get("value", 0)
+                                        break
+                                
+                                if attempts and attempts > best_attempts:
+                                    best_attempts = attempts
+                                    athlete_data = athlete.get("athlete", {})
+                                    best_qb = athlete_data.get("displayName") or athlete_data.get("shortName")
+                            
+                            if best_qb:
+                                return best_qb
+        
+        # Fallback: Try scraping ESPN box score page
+        from bs4 import BeautifulSoup
+        
+        # Small delay to avoid rate limiting
+        time.sleep(1)
+        
+        url = f"https://www.espn.com/nfl/boxscore/_/gameId/{game_id}"
+        response = requests.get(url, timeout=10, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        })
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Find passing stats table for the team
+        # ESPN box score has team sections - need to identify which team is which
+        passing_section = soup.find('section', string=re.compile(r'Passing', re.I))
+        if not passing_section:
+            # Try alternative structure
+            passing_section = soup.find('div', class_=re.compile(r'passing', re.I))
+        
+        if passing_section:
+            # Find table with passing stats
+            table = passing_section.find_parent('table') or passing_section.find('table')
+            if table:
+                # Find rows with QB stats, look for highest attempts
+                rows = table.find_all('tr')[1:]  # Skip header
+                best_qb = None
+                best_attempts = -1
+                
+                for row in rows:
+                    cells = row.find_all(['td', 'th'])
+                    if len(cells) >= 2:
+                        player_name = cells[0].get_text(strip=True)
+                        attempts_text = cells[1].get_text(strip=True)
+                        try:
+                            attempts = int(attempts_text)
+                            if attempts > best_attempts:
+                                best_attempts = attempts
+                                best_qb = player_name
+                        except ValueError:
+                            pass
+                
+                if best_qb:
+                    return best_qb
+        
+        return None
+    except Exception as e:
+        # Silently fail - return None to allow fallback
+        return None
+
+
 def find_matching_spread(home_team: str, away_team: str, spreads: Dict) -> Optional[float]:
     """
     Find matching spread for a game from the spreads dictionary.
@@ -559,11 +920,17 @@ def find_matching_spread(home_team: str, away_team: str, spreads: Dict) -> Optio
     return None
 
 
-def save_scores_to_db(scores: List[Dict], week: int, season: int):
+def save_scores_to_db(scores: List[Dict], week: int, season: int, prompt_for_quarterbacks: bool = False):
     """
     Update database with previous week's scores.
     Only updates existing games - does not insert new rows.
     This is because we don't want to add games without known spreads.
+    
+    Args:
+        scores: List of game dictionaries with scores
+        week: Week number
+        season: Season year
+        prompt_for_quarterbacks: If True, prompt for actual quarterbacks
     """
     updated_count = 0
     skipped_count = 0
@@ -574,6 +941,7 @@ def save_scores_to_db(scores: List[Dict], week: int, season: int):
         date = game.get("date", "")
         home_score = game.get("home_score")
         visitor_score = game.get("away_score")
+        game_id = game.get("game_id")
         
         if not home or not away or not date:
             continue
@@ -582,12 +950,54 @@ def save_scores_to_db(scores: List[Dict], week: int, season: int):
         if home_score is not None and visitor_score is not None:
             # Check if game exists - only update existing games, don't insert new ones
             if game_exists(home, away, date):
-                # Update existing game with scores (spread stays as-is from when it was inserted)
-                if update_game_scores(home, away, date, home_score, visitor_score):
+                # Get actual quarterbacks if prompting
+                home_actual_qb = None
+                visitor_actual_qb = None
+                
+                if prompt_for_quarterbacks:
+                    # Priority 1: Expected QB from same game
+                    home_expected_qb = get_expected_qb_from_game(home, away, date, home)
+                    # Priority 2: QB from box score (if available)
+                    home_box_qb = fetch_actual_quarterback(game_id, home, True) if game_id else None
+                    home_default_qb = home_expected_qb or home_box_qb
+                    
+                    home_prompt = f"{home} Actual QB"
+                    if home_default_qb:
+                        home_prompt += f" [{home_default_qb}]"
+                    home_prompt += ": "
+                    
+                    home_input = input(home_prompt).strip()
+                    home_actual_qb_raw = home_input if home_input else home_default_qb
+                    home_actual_qb = normalize_qb_name(home_actual_qb_raw)
+                    
+                    # For visitor team
+                    visitor_expected_qb = get_expected_qb_from_game(home, away, date, away)
+                    visitor_box_qb = fetch_actual_quarterback(game_id, away, False) if game_id else None
+                    visitor_default_qb = visitor_expected_qb or visitor_box_qb
+                    
+                    visitor_prompt = f"{away} Actual QB"
+                    if visitor_default_qb:
+                        visitor_prompt += f" [{visitor_default_qb}]"
+                    visitor_prompt += ": "
+                    
+                    visitor_input = input(visitor_prompt).strip()
+                    visitor_actual_qb_raw = visitor_input if visitor_input else visitor_default_qb
+                    visitor_actual_qb = normalize_qb_name(visitor_actual_qb_raw)
+                
+                # Update game with scores and actual QBs using upsert_game
+                if upsert_game(home, away, date, None, home_score, visitor_score, season, week,
+                              None, None, home_actual_qb, visitor_actual_qb, None, None):
                     if updated_count == 0:
                         print("Updating scores:")
                     updated_count += 1
                     print(f"  {home} {home_score}, {away} {visitor_score}")
+                    if home_actual_qb or visitor_actual_qb:
+                        qb_display = []
+                        if home_actual_qb:
+                            qb_display.append(f"{home}: {home_actual_qb}")
+                        if visitor_actual_qb:
+                            qb_display.append(f"{away}: {visitor_actual_qb}")
+                        print(f"    Actual QBs: {', '.join(qb_display)}")
             else:
                 # Game doesn't exist - skip it (we don't want to add games without spreads)
                 skipped_count += 1
@@ -632,25 +1042,33 @@ def save_schedule_to_db(schedule: List[Dict], week: int, season: int, spreads: O
         home_expected_qb = None
         visitor_expected_qb = None
         if prompt_for_quarterbacks:
-            # Get most recent expected quarterback for home team
-            home_qb = get_most_recent_expected_qb(home, season, week)
+            # For home team: Priority 1) web fetch, Priority 2) last week's actual QB
+            home_web_qb = fetch_expected_quarterback(home)
+            home_last_actual_qb = get_most_recent_actual_qb(home, season, week) if not home_web_qb else None
+            home_default_qb = home_web_qb or home_last_actual_qb
+            
             home_prompt = f"{home} QB"
-            if home_qb:
-                home_prompt += f" [{home_qb}]"
+            if home_default_qb:
+                home_prompt += f" [{home_default_qb}]"
             home_prompt += ": "
             
             home_input = input(home_prompt).strip()
-            home_expected_qb = home_input if home_input else home_qb
+            home_expected_qb_raw = home_input if home_input else home_default_qb
+            home_expected_qb = normalize_qb_name(home_expected_qb_raw)
             
-            # Get most recent expected quarterback for away team
-            away_qb = get_most_recent_expected_qb(away, season, week)
+            # For away team: Priority 1) web fetch, Priority 2) last week's actual QB
+            away_web_qb = fetch_expected_quarterback(away)
+            away_last_actual_qb = get_most_recent_actual_qb(away, season, week) if not away_web_qb else None
+            away_default_qb = away_web_qb or away_last_actual_qb
+            
             away_prompt = f"{away} QB"
-            if away_qb:
-                away_prompt += f" [{away_qb}]"
+            if away_default_qb:
+                away_prompt += f" [{away_default_qb}]"
             away_prompt += ": "
             
             away_input = input(away_prompt).strip()
-            visitor_expected_qb = away_input if away_input else away_qb
+            visitor_expected_qb_raw = away_input if away_input else away_default_qb
+            visitor_expected_qb = normalize_qb_name(visitor_expected_qb_raw)
         
         # Check if game exists before upserting
         existed = game_exists(home, away, date)
@@ -728,7 +1146,7 @@ def main():
         scores = fetch_espn_scores(season, previous_week)
         
         if scores:
-            save_scores_to_db(scores, previous_week, season)
+            save_scores_to_db(scores, previous_week, season, prompt_for_quarterbacks=False)
         else:
             print("Warning: Could not fetch scores. Database not updated.")
         
