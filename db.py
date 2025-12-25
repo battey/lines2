@@ -234,15 +234,15 @@ def upsert_game(home: str, visitor: str, date: str, spread: Optional[float],
                 home_score: Optional[int], visitor_score: Optional[int],
                 season: int, week: int, home_expected_qb: Optional[str] = None,
                 visitor_expected_qb: Optional[str] = None, home_actual_qb: Optional[str] = None,
-                visitor_actual_qb: Optional[str] = None, win_prob_lr: Optional[float] = None,
-                win_prob_dl: Optional[float] = None) -> bool:
+                visitor_actual_qb: Optional[str] = None, log_reg_win_prob: Optional[float] = None,
+                dl_win_prob: Optional[float] = None) -> bool:
     """
     Insert or update a game. If game exists, only update missing values.
     Returns True if successful.
     
     Note: spread can be None if unavailable (e.g., uncertain starting QB).
     Note: expected_qb columns filled when gathering schedule, actual_qb columns filled when gathering results.
-    Note: win_prob_lr and win_prob_dl are predictions (NULL for now).
+    Note: log_reg_win_prob and dl_win_prob are predictions (NULL for now).
     
     Rules:
     - If game doesn't exist, insert it
@@ -260,7 +260,7 @@ def upsert_game(home: str, visitor: str, date: str, spread: Optional[float],
         # Check if game exists - also get existing values to check what's missing
         cursor.execute("""
             SELECT id, home_score, visitor_score, spread, home_expected_qb, visitor_expected_qb,
-                   home_actual_qb, visitor_actual_qb, win_prob_lr, win_prob_dl FROM result 
+                   home_actual_qb, visitor_actual_qb, log_reg_win_prob, dl_win_prob FROM result 
             WHERE home = ? AND visitor = ? AND date = ?
         """, (home, visitor, date))
         
@@ -268,7 +268,7 @@ def upsert_game(home: str, visitor: str, date: str, spread: Optional[float],
         
         if existing:
             # Update existing game
-            game_id, existing_home_score, existing_visitor_score, existing_spread, existing_home_expected_qb, existing_visitor_expected_qb, existing_home_actual_qb, existing_visitor_actual_qb, existing_win_prob_lr, existing_win_prob_dl = existing
+            game_id, existing_home_score, existing_visitor_score, existing_spread, existing_home_expected_qb, existing_visitor_expected_qb, existing_home_actual_qb, existing_visitor_actual_qb, existing_log_reg_win_prob, existing_dl_win_prob = existing
             
             zulu_now = get_zulu_timestamp()
             
@@ -280,8 +280,8 @@ def upsert_game(home: str, visitor: str, date: str, spread: Optional[float],
             update_visitor_expected_qb = (visitor_expected_qb is not None and existing_visitor_expected_qb is None)
             update_home_actual_qb = (home_actual_qb is not None and existing_home_actual_qb is None)
             update_visitor_actual_qb = (visitor_actual_qb is not None and existing_visitor_actual_qb is None)
-            update_win_prob_lr = (win_prob_lr is not None and existing_win_prob_lr is None)
-            update_win_prob_dl = (win_prob_dl is not None and existing_win_prob_dl is None)
+            update_log_reg_win_prob = (log_reg_win_prob is not None and existing_log_reg_win_prob is None)
+            update_dl_win_prob = (dl_win_prob is not None and existing_dl_win_prob is None)
             
             # Build dynamic update query
             updates = []
@@ -305,12 +305,12 @@ def upsert_game(home: str, visitor: str, date: str, spread: Optional[float],
             if update_visitor_actual_qb:
                 updates.append("visitor_actual_qb = ?")
                 params.append(visitor_actual_qb)
-            if update_win_prob_lr:
-                updates.append("win_prob_lr = ?")
-                params.append(win_prob_lr)
-            if update_win_prob_dl:
-                updates.append("win_prob_dl = ?")
-                params.append(win_prob_dl)
+            if update_log_reg_win_prob:
+                updates.append("log_reg_win_prob = ?")
+                params.append(log_reg_win_prob)
+            if update_dl_win_prob:
+                updates.append("dl_win_prob = ?")
+                params.append(dl_win_prob)
             
             # Only update if there's something to update
             if updates:
@@ -325,9 +325,9 @@ def upsert_game(home: str, visitor: str, date: str, spread: Optional[float],
             # Insert new game (set both created_at and updated_at to current Zulu time)
             zulu_now = get_zulu_timestamp()
             cursor.execute("""
-                INSERT INTO result (home, visitor, date, spread, home_score, visitor_score, home_expected_qb, visitor_expected_qb, home_actual_qb, visitor_actual_qb, win_prob_lr, win_prob_dl, season, week, created_at, updated_at)
+                INSERT INTO result (home, visitor, date, spread, home_score, visitor_score, home_expected_qb, visitor_expected_qb, home_actual_qb, visitor_actual_qb, log_reg_win_prob, dl_win_prob, season, week, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (home, visitor, date, spread, home_score, visitor_score, home_expected_qb, visitor_expected_qb, home_actual_qb, visitor_actual_qb, win_prob_lr, win_prob_dl, season, week, zulu_now, zulu_now))
+            """, (home, visitor, date, spread, home_score, visitor_score, home_expected_qb, visitor_expected_qb, home_actual_qb, visitor_actual_qb, log_reg_win_prob, dl_win_prob, season, week, zulu_now, zulu_now))
         
         conn.commit()
         return True

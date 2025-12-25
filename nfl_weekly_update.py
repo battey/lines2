@@ -1073,7 +1073,7 @@ def save_schedule_to_db(schedule: List[Dict], week: int, season: int, spreads: O
         # Check if game exists before upserting
         existed = game_exists(home, away, date)
         
-        # Insert/update game without scores (actual_qb columns, win_prob_lr, win_prob_dl remain NULL)
+        # Insert/update game without scores (actual_qb columns, log_reg_win_prob, dl_win_prob remain NULL)
         if upsert_game(home, away, date, spread, None, None, season, week, home_expected_qb, visitor_expected_qb, None, None, None, None):
             if inserted_count == 0 and updated_count == 0:
                 print("Updating schedule:")

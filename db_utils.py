@@ -49,7 +49,7 @@ def create_database():
     # Note: created_at and updated_at will be set in application code to ensure Zulu format
     # Note: spread can be NULL when spreads aren't available (e.g., uncertain starting QB)
     # Note: expected_qb columns filled when gathering schedule, actual_qb columns filled when gathering results
-    # Note: win_prob_lr and win_prob_dl are predictions (NULL for now)
+    # Note: log_reg_win_prob and dl_win_prob are predictions (NULL for now)
     cursor.execute(
         """
         CREATE TABLE result (
@@ -64,8 +64,8 @@ def create_database():
             visitor_expected_qb TEXT,
             home_actual_qb TEXT,
             visitor_actual_qb TEXT,
-            win_prob_lr REAL,
-            win_prob_dl REAL,
+            log_reg_win_prob REAL,
+            dl_win_prob REAL,
             season INTEGER NOT NULL,
             week INTEGER NOT NULL,
             created_at TIMESTAMP NOT NULL,
@@ -104,8 +104,8 @@ def create_database():
     print("  - visitor_expected_qb (visitor team expected quarterback, filled when gathering schedule)")
     print("  - home_actual_qb (home team actual quarterback who played, filled when gathering results)")
     print("  - visitor_actual_qb (visitor team actual quarterback who played, filled when gathering results)")
-    print("  - win_prob_lr (win probability from logistic/linear regression, NULL for now)")
-    print("  - win_prob_dl (win probability from deep learning, NULL for now)")
+    print("  - log_reg_win_prob (win probability from logistic regression, NULL for now)")
+    print("  - dl_win_prob (win probability from deep learning, NULL for now)")
     print("  - season (NFL season year)")
     print("  - week (week number)")
     print("  - created_at, updated_at (timestamps)")
