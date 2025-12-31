@@ -39,7 +39,7 @@ Mathematically, the home team covers if:
 
 ## Input Features
 
-The models use **43 input features** extracted from historical game data. These features fall into five categories:
+The models use **55 input features** extracted from historical game data. These features fall into seven categories:
 
 ### 1. Current Game Spread (1 feature)
 
@@ -81,6 +81,32 @@ This captures momentum and recent form. If a team has played fewer than 5 games,
 
 The same 15 features (5 games × 3 features) for the visiting team.
 
+### 6. Home Quarterback Statistics (6 features)
+
+Statistics for the home team's expected/actual quarterback:
+
+| Feature | Description |
+|---------|-------------|
+| `qb_games` | Number of games this QB has started this season |
+| `qb_win_pct` | Win percentage when this QB plays |
+| `qb_cover_pct` | Spread cover percentage when this QB plays |
+| `qb_points_avg` | Average points scored when this QB plays |
+| `qb_margin_avg` | Average scoring margin when this QB plays |
+| `is_backup` | 1 if this QB is NOT the team's primary starter, 0 otherwise |
+
+The `is_backup` feature is particularly important — it flags situations like "the Colts with their backup QB" which historically perform differently than with the starter.
+
+### 7. Visitor Quarterback Statistics (6 features)
+
+The same 6 features for the visiting team's quarterback.
+
+### How QB Identity is Determined
+
+- **For predictions**: Uses `expected_qb` (who is expected to start)
+- **For training**: Uses `actual_qb` if available (who actually played), otherwise `expected_qb`
+- **Primary QB**: The quarterback who has started the most games for that team this season
+- **Backup detection**: If the current game's QB differs from the primary QB, `is_backup = 1`
+
 ### Feature Count Summary
 
 ```
@@ -89,8 +115,10 @@ The same 15 features (5 games × 3 features) for the visiting team.
 + 6  (visitor team stats)
 + 15 (home team recent: 5 games × 3 features)
 + 15 (visitor team recent: 5 games × 3 features)
++ 6  (home QB stats)
++ 6  (visitor QB stats)
 ────
-= 43 total features
+= 55 total features
 ```
 
 ---
@@ -159,7 +187,7 @@ A neural network is a model inspired by the human brain. It consists of layers o
 The network is a **feedforward neural network** (also called a Multi-Layer Perceptron):
 
 ```
-Input Layer (43 features)
+Input Layer (55 features)
      ↓
 Hidden Layer 1 (16 neurons) + ReLU + Dropout
      ↓
@@ -186,7 +214,7 @@ Each hidden layer:
 
 ```python
 model = keras.Sequential([
-    layers.Dense(16, activation='relu', input_shape=(43,)),
+    layers.Dense(16, activation='relu', input_shape=(55,)),
     layers.Dropout(0.3),
     layers.Dense(8, activation='relu'),
     layers.Dropout(0.3),

@@ -210,6 +210,132 @@ def calculate_team_stats(team_name: str, season: int, before_week: int, complete
     }
 
 
+def get_primary_qb(team_name: str, season: int, before_week: int, completed_games: List[Dict]) -> Optional[str]:
+    """
+    Get the primary (most frequently starting) quarterback for a team this season.
+    
+    Args:
+        team_name: Name of the team
+        season: Season year
+        before_week: Only consider games before this week
+        completed_games: List of all completed games
+    
+    Returns:
+        Name of the primary QB, or None if no QB data available
+    """
+    from collections import Counter
+    
+    qb_counts = Counter()
+    
+    for game in completed_games:
+        if game['season'] != season or game['week'] >= before_week:
+            continue
+        
+        is_home = game['home'].upper() == team_name.upper()
+        is_visitor = game['visitor'].upper() == team_name.upper()
+        
+        if is_home:
+            # Use actual_qb if available (completed game), otherwise expected_qb
+            qb = game.get('home_actual_qb') or game.get('home_expected_qb')
+            if qb:
+                qb_counts[qb] += 1
+        elif is_visitor:
+            qb = game.get('visitor_actual_qb') or game.get('visitor_expected_qb')
+            if qb:
+                qb_counts[qb] += 1
+    
+    if not qb_counts:
+        return None
+    
+    # Return the QB with the most starts
+    return qb_counts.most_common(1)[0][0]
+
+
+def calculate_qb_stats(qb_name: str, team_name: str, season: int, before_week: int, completed_games: List[Dict]) -> Dict:
+    """
+    Calculate statistics for games where a specific quarterback played.
+    
+    Args:
+        qb_name: Name of the quarterback (can be None)
+        team_name: Name of the team
+        season: Season year
+        before_week: Only consider games before this week
+        completed_games: List of all completed games
+    
+    Returns:
+        Dictionary with QB-specific statistics
+    """
+    # Default values when no QB data is available
+    defaults = {
+        'qb_games': 0,
+        'qb_win_pct': 0.5,
+        'qb_cover_pct': 0.5,
+        'qb_points_avg': 20.0,
+        'qb_margin_avg': 0.0,
+    }
+    
+    if qb_name is None:
+        return defaults
+    
+    # Filter games where this QB played for this team
+    qb_games = []
+    for game in completed_games:
+        if game['season'] != season or game['week'] >= before_week:
+            continue
+        
+        is_home = game['home'].upper() == team_name.upper()
+        is_visitor = game['visitor'].upper() == team_name.upper()
+        
+        if is_home:
+            actual_qb = game.get('home_actual_qb') or game.get('home_expected_qb')
+            if actual_qb and actual_qb.upper() == qb_name.upper():
+                qb_games.append((game, True))  # (game, is_home)
+        elif is_visitor:
+            actual_qb = game.get('visitor_actual_qb') or game.get('visitor_expected_qb')
+            if actual_qb and actual_qb.upper() == qb_name.upper():
+                qb_games.append((game, False))
+    
+    if not qb_games:
+        return defaults
+    
+    wins = 0
+    covers = 0
+    points = []
+    margins = []
+    
+    for game, is_home in qb_games:
+        if is_home:
+            team_score = game['home_score']
+            opp_score = game['visitor_score']
+            spread = game['spread']
+        else:
+            team_score = game['visitor_score']
+            opp_score = game['home_score']
+            spread = -game['spread']
+        
+        # Win
+        if team_score > opp_score:
+            wins += 1
+        
+        # Cover
+        margin = team_score - opp_score
+        if margin >= -spread:
+            covers += 1
+        
+        points.append(team_score)
+        margins.append(margin)
+    
+    total = len(qb_games)
+    
+    return {
+        'qb_games': total,
+        'qb_win_pct': wins / total if total > 0 else 0.5,
+        'qb_cover_pct': covers / total if total > 0 else 0.5,
+        'qb_points_avg': np.mean(points) if points else 20.0,
+        'qb_margin_avg': np.mean(margins) if margins else 0.0,
+    }
+
+
 def get_recent_results(team_name: str, season: int, before_week: int, completed_games: List[Dict], n_weeks: int = RECENT_WEEKS) -> List[Dict]:
     """
     Get recent game results for a team.
@@ -296,6 +422,8 @@ def extract_features_for_game(game: Dict, completed_games: List[Dict]) -> np.nda
     3. Visitor team stats (same as above)
     4. Home team recent results (last N weeks: margin, covered, spread)
     5. Visitor team recent results (last N weeks: margin, covered, spread)
+    6. Home QB stats (qb_games, qb_win_pct, qb_cover_pct, qb_points_avg, qb_margin_avg, is_backup)
+    7. Visitor QB stats (same as above)
     
     Args:
         game: Game dictionary from database
@@ -321,6 +449,30 @@ def extract_features_for_game(game: Dict, completed_games: List[Dict]) -> np.nda
     # Get recent results
     home_recent = get_recent_results(home_team, season, week, completed_games)
     visitor_recent = get_recent_results(visitor_team, season, week, completed_games)
+    
+    # Get QB information
+    # For predictions (upcoming games), use expected_qb
+    # For training (completed games), use actual_qb if available, otherwise expected_qb
+    home_qb = game.get('home_actual_qb') or game.get('home_expected_qb')
+    visitor_qb = game.get('visitor_actual_qb') or game.get('visitor_expected_qb')
+    
+    # Get primary QBs for each team (most games started this season)
+    home_primary_qb = get_primary_qb(home_team, season, week, completed_games)
+    visitor_primary_qb = get_primary_qb(visitor_team, season, week, completed_games)
+    
+    # Calculate QB-specific stats
+    home_qb_stats = calculate_qb_stats(home_qb, home_team, season, week, completed_games)
+    visitor_qb_stats = calculate_qb_stats(visitor_qb, visitor_team, season, week, completed_games)
+    
+    # Determine if a backup QB is expected to play
+    # (1 if current QB is different from primary QB, 0 otherwise)
+    home_is_backup = 0
+    if home_qb and home_primary_qb:
+        home_is_backup = 0 if home_qb.upper() == home_primary_qb.upper() else 1
+    
+    visitor_is_backup = 0
+    if visitor_qb and visitor_primary_qb:
+        visitor_is_backup = 0 if visitor_qb.upper() == visitor_primary_qb.upper() else 1
     
     # Build feature vector
     features = []
@@ -363,6 +515,26 @@ def extract_features_for_game(game: Dict, completed_games: List[Dict]) -> np.nda
             result['covered'],
             result['spread'],
         ])
+    
+    # 6. Home QB stats (6 features)
+    features.extend([
+        home_qb_stats['qb_games'],
+        home_qb_stats['qb_win_pct'],
+        home_qb_stats['qb_cover_pct'],
+        home_qb_stats['qb_points_avg'],
+        home_qb_stats['qb_margin_avg'],
+        home_is_backup,
+    ])
+    
+    # 7. Visitor QB stats (6 features)
+    features.extend([
+        visitor_qb_stats['qb_games'],
+        visitor_qb_stats['qb_win_pct'],
+        visitor_qb_stats['qb_cover_pct'],
+        visitor_qb_stats['qb_points_avg'],
+        visitor_qb_stats['qb_margin_avg'],
+        visitor_is_backup,
+    ])
     
     return np.array(features, dtype=np.float32)
 
@@ -451,6 +623,7 @@ def get_feature_count() -> int:
         Total number of features
     """
     # 1 (spread) + 6 (home stats) + 6 (visitor stats) + 
-    # RECENT_WEEKS * 3 (home recent) + RECENT_WEEKS * 3 (visitor recent)
-    return 1 + 6 + 6 + (RECENT_WEEKS * 3) + (RECENT_WEEKS * 3)
+    # RECENT_WEEKS * 3 (home recent) + RECENT_WEEKS * 3 (visitor recent) +
+    # 6 (home QB stats) + 6 (visitor QB stats)
+    return 1 + 6 + 6 + (RECENT_WEEKS * 3) + (RECENT_WEEKS * 3) + 6 + 6
 
