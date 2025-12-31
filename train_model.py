@@ -29,17 +29,22 @@ SCALER_PATH = MODEL_DIR / "scaler.pkl"
 SIMPLE_MODEL_PATH = MODEL_DIR / "logistic_model.pkl"
 
 
-def train_simple_model(season: Optional[int] = None, min_week: int = 1):
+def train_simple_model(season: Optional[int] = None, min_week: int = 1, all_seasons: bool = False):
     """
     Train a simple logistic regression model.
     Better for small datasets (< 100 samples).
+    
+    Args:
+        season: Season to train on (None = current season, unless all_seasons=True)
+        min_week: Minimum week to include (to ensure teams have history)
+        all_seasons: If True, train on all seasons; if False, only current/specified season
     """
     print("NFL Spread Prediction - Simple Model (Logistic Regression)")
     print("=" * 50)
     
     # Load and prepare data
     print("\nLoading training data...")
-    X, y = prepare_training_data(season=season, min_week=min_week)
+    X, y = prepare_training_data(season=season, min_week=min_week, all_seasons=all_seasons)
     
     print(f"Total samples: {len(X)}")
     print(f"Features per sample: {X.shape[1]}")
@@ -117,12 +122,13 @@ def train_model(
     hidden_units: list = [16, 8],
     dropout_rate: float = 0.3,
     min_week: int = 1,
+    all_seasons: bool = False,
 ):
     """
     Train the NFL spread prediction model.
     
     Args:
-        season: Season to train on (None = all seasons)
+        season: Season to train on (None = current season, unless all_seasons=True)
         epochs: Number of training epochs
         batch_size: Batch size for training
         validation_split: Fraction of data for validation
@@ -130,13 +136,14 @@ def train_model(
         hidden_units: Hidden layer sizes
         dropout_rate: Dropout rate
         min_week: Minimum week to include (to ensure teams have history)
+        all_seasons: If True, train on all seasons; if False, only current/specified season
     """
     print("NFL Spread Prediction Model Training")
     print("=" * 50)
     
     # Load and prepare data
     print("\nLoading training data...")
-    X, y = prepare_training_data(season=season, min_week=min_week)
+    X, y = prepare_training_data(season=season, min_week=min_week, all_seasons=all_seasons)
     
     print(f"Total samples: {len(X)}")
     
@@ -279,7 +286,12 @@ def main():
         "--season",
         type=int,
         default=None,
-        help="Season to train on (default: all seasons)"
+        help="Season to train on (default: current season)"
+    )
+    parser.add_argument(
+        "--all-seasons",
+        action="store_true",
+        help="Train on all available seasons instead of just the current season"
     )
     parser.add_argument(
         "--epochs",
@@ -321,7 +333,7 @@ def main():
     args = parser.parse_args()
     
     if args.simple:
-        train_simple_model(season=args.season, min_week=args.min_week)
+        train_simple_model(season=args.season, min_week=args.min_week, all_seasons=args.all_seasons)
         return
     
     train_model(
@@ -331,6 +343,7 @@ def main():
         hidden_units=args.hidden_units,
         dropout_rate=args.dropout,
         min_week=args.min_week,
+        all_seasons=args.all_seasons,
     )
 
 

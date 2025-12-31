@@ -320,6 +320,110 @@ def dump_database(format_type: str):
         conn.close()
 
 
+def show_results():
+    """
+    Show results from the most-recently completed week.
+    For each game, shows teams, scores, spread, and who won against the spread.
+    """
+    if not DB_PATH.exists():
+        print(f"Error: Database not found at {DB_PATH}", file=sys.stderr)
+        print("Use --create to create the database first.", file=sys.stderr)
+        return
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    try:
+        # Find the most recently completed week (games with both scores)
+        cursor.execute(
+            """
+            SELECT season, week
+            FROM result
+            WHERE home_score IS NOT NULL AND visitor_score IS NOT NULL
+            ORDER BY season DESC, week DESC
+            LIMIT 1
+        """
+        )
+
+        latest_week = cursor.fetchone()
+        if not latest_week:
+            print("No completed games found in database.", file=sys.stderr)
+            return
+
+        season, week = latest_week['season'], latest_week['week']
+
+        # Get all games from that week
+        cursor.execute(
+            """
+            SELECT home, visitor, home_score, visitor_score, spread
+            FROM result
+            WHERE season = ? AND week = ? AND home_score IS NOT NULL AND visitor_score IS NOT NULL
+            ORDER BY date, home, visitor
+        """,
+            (season, week)
+        )
+
+        games = cursor.fetchall()
+
+        if not games:
+            print(f"No completed games found for {season} Week {week}.", file=sys.stderr)
+            return
+
+        # Prepare results table
+        results = []
+        for game in games:
+            home = game['home']
+            visitor = game['visitor']
+            home_score = game['home_score']
+            visitor_score = game['visitor_score']
+            spread = game['spread']
+
+            # Calculate who won against the spread
+            # Home team covers if: (home_score - visitor_score) >= -spread
+            actual_margin = home_score - visitor_score
+            
+            if spread is None:
+                spread_winner = "N/A (no spread)"
+            else:
+                if actual_margin > -spread:
+                    spread_winner = home
+                elif actual_margin < -spread:
+                    spread_winner = visitor
+                else:
+                    spread_winner = "Push (tie)"
+
+            # Format spread display
+            if spread is None:
+                spread_display = "N/A"
+            else:
+                spread_display = f"{spread:+.1f}"
+
+            results.append([
+                visitor,
+                visitor_score,
+                "@",
+                home,
+                home_score,
+                spread_display,
+                spread_winner
+            ])
+
+        # Print header
+        print(f"\n{season} Week {week} Results\n")
+        print(tabulate(
+            results,
+            headers=["Visitor", "Score", "", "Home", "Score", "Spread", "Covered"],
+            tablefmt="grid"
+        ))
+        print()
+
+    except sqlite3.Error as e:
+        print(f"Error querying database: {e}", file=sys.stderr)
+    finally:
+        conn.close()
+
+
 def main():
     """Main function to handle command-line arguments."""
     parser = argparse.ArgumentParser(description="Database utility script for managing the NFL results SQLite database.")
@@ -330,6 +434,7 @@ def main():
     group.add_argument("--dump", action="store_true", help="Dump all rows to stdout (sorted by date, home, visitor)")
     group.add_argument("--dump-sql", action="store_true", help="Dump database to db_dump.sql")
     group.add_argument("--restore-sql", action="store_true", help="Restore database from db_dump.sql")
+    group.add_argument("--results", action="store_true", help="Show results from the most-recently completed week")
 
     parser.add_argument(
         "--format",
@@ -350,6 +455,8 @@ def main():
         dump_sqlite_to_file(DB_PATH, Path("db_dump.sql"))
     elif args.restore_sql:
         rebuild_sqlite_from_dump(Path("db_dump.sql"), DB_PATH)
+    elif args.results:
+        show_results()
 
 
 if __name__ == "__main__":

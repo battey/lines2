@@ -93,8 +93,13 @@ def predict_upcoming_games(
         print("No upcoming games found.")
         return []
     
-    # Get completed games for feature extraction
-    completed_games = get_completed_games(season=season)
+    # Determine the actual season from upcoming games (in case season was None)
+    actual_season = upcoming_games[0]['season']
+    
+    # Get completed games for feature extraction - ONLY from the current season
+    # to avoid mixing data from different seasons
+    completed_games = get_completed_games(season=actual_season)
+    print(f"Using {len(completed_games)} completed games from {actual_season} season for feature extraction")
     
     print(f"\nFound {len(upcoming_games)} upcoming game(s)")
     print("Extracting features and generating predictions...")

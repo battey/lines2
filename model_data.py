@@ -12,6 +12,22 @@ from db import get_connection, DB_PATH
 RECENT_WEEKS = 5
 
 
+def get_current_season() -> int:
+    """
+    Determine the current NFL season based on the current date.
+    
+    NFL seasons start in September, so:
+    - September onwards = current year's season
+    - January-August = previous year's season
+    
+    Returns:
+        The current season year
+    """
+    from datetime import datetime
+    now = datetime.now()
+    return now.year if now.month >= 9 else now.year - 1
+
+
 def get_completed_games(season: Optional[int] = None, before_week: Optional[int] = None) -> List[Dict]:
     """
     Get all completed games from the database.
@@ -375,19 +391,29 @@ def create_label(game: Dict) -> int:
     return 1 if actual_margin >= -spread else 0
 
 
-def prepare_training_data(season: Optional[int] = None, min_week: int = 4) -> Tuple[np.ndarray, np.ndarray]:
+def prepare_training_data(season: Optional[int] = None, min_week: int = 4, all_seasons: bool = False) -> Tuple[np.ndarray, np.ndarray]:
     """
     Prepare training data from completed games.
     
     Args:
-        season: Filter by season (None = all seasons)
+        season: Filter by season (None = current season, unless all_seasons=True)
         min_week: Minimum week to include (to ensure teams have some history)
+        all_seasons: If True, use all seasons; if False, use only the specified/current season
     
     Returns:
         Tuple of (features, labels) as numpy arrays
     """
-    # Get all completed games
-    completed_games = get_completed_games(season=season)
+    # Determine which season to use
+    if all_seasons:
+        target_season = None  # None means all seasons in get_completed_games
+    elif season is not None:
+        target_season = season
+    else:
+        target_season = get_current_season()
+        print(f"Using current season: {target_season}")
+    
+    # Get completed games (only from target season to avoid mixing seasons)
+    completed_games = get_completed_games(season=target_season)
     
     # Filter to games with enough history
     training_games = [g for g in completed_games if g['week'] >= min_week]
